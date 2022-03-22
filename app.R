@@ -10,7 +10,7 @@ library(shinycssloaders)
 library(DT)
 library(hdf5r)
 library(ComplexHeatmap) # sudo apt-get install libcairo2-dev
-#library(plotly)
+#library(plotly)impo
 library(zoo)
 
 batch_size <- 30000
@@ -94,19 +94,20 @@ filter_crispr <- function(states_df,
   crispr_list
 }
 
-model <- keras::load_model_hdf5("~/github/philippmuench/GenomeNetFinder/models/crispr_model.h5", compile = FALSE)
+model <- keras::load_model_hdf5("models/crispr_model_el4.hdf5", compile = FALSE)
 
 num_layers <- length(model$get_config()$layers)
 layer_name <- model$get_config()$layers[[num_layers]]$name
 layer2_name <- model$get_config()$layers[[num_layers-1]]$name
 
-dummy <- readChar("~/github/philippmuench/GenomeNetFinder/dummy.txt",
-                  file.info("~/github/philippmuench/GenomeNetFinder/dummy.txt")$size)
+dummy <- readChar("dummy.txt",
+                  file.info("dummy.txt")$size)
 
 ui <- dashboardPage(#skin = "black",
   dashboardHeader(title = "CRISPR prediction", titleWidth = 350, disable = T),
   
-  dashboardSidebar(width = 350, disable = F,
+  dashboardSidebar(
+width = 350, disable = F,
                    box(width = 12, solidHeader = TRUE,
                        p(
                          class = "text-muted",
@@ -128,6 +129,9 @@ ui <- dashboardPage(#skin = "black",
   ),
   dashboardBody(
     tags$head(tags$style(HTML('
+    
+                                #text {height: 200px; word-wrap: break-word; font-family: monospace; overflow-y:scroll;}
+
                                 /* logo */
                                 .skin-blue .main-header .logo {
                                 background-color: #ffffff;
@@ -142,16 +146,13 @@ ui <- dashboardPage(#skin = "black",
                                 .skin-blue .main-header .navbar {
                                 background-color: #ffffff;
                                 }
-                                
                               
                                 .box-title {
                                   color:#000000;
                                   font-family: "Source Sans Pro","Helvetica Neue","Helvetica","Arial","sans-serif";
                                   background:#e8e8e8
                                 }
-                                
-                                
-                                
+                            
                                 .box.box-solid.box-primary>.box-header {
                                   color:#000000;
                                   background:#e8e8e8
@@ -207,58 +208,94 @@ ui <- dashboardPage(#skin = "black",
                                 }
                                 
                                 '))),
+    
+  
+    
     fluidRow(
       box(
-        title = "Model Confidence Plot", width = 8, solidHeader = TRUE, status = "primary",
+        id = "box2", title = "Model Confidence Plot", width = 12, solidHeader = TRUE, status = "primary",
         plotOutput("plot1", height = 250) %>% withSpinner(color="#000000", type = 8),
       ),
-      box(
-        title = "Detailed View", width = 4, solidHeader = TRUE, status = "primary",
-        plotOutput("plot3", height = 250)) %>% withSpinner(color="#000000", type = 8),
+    ),
+      fluidRow(
+        box(title = "Matches", width = 8, solidHeader = TRUE, status = "primary",
+            dataTableOutput('table'), 
+            uiOutput("downloadDataUI"),
+            
+
+        ),
+        box(title = "Post-processing", width = 4, solidHeader = TRUE, status = "primary",
+                 numericInput("threshold_conf", "Min average confidence:", 0.8, step = .1, min = 0, max = 1),
+                 numericInput("threshold_pos_rate", "Positive rate:", 0.8, step = .1, min = 0, max = 0.99),
+                 numericInput("threshold_min_seq_len", "Min array length:", 100, step = 10,  min = 1, max = 100),
+                 numericInput("threshold_gap", "Min gap between loci:", 50, step = 10, min = 1, max = 1000),
+                 numericInput("adjacent", "Number of nt to plot adjacent to loci:", 50, step = 10, min = 1, max = 1000))
+    
+      ),
       
+      fluidRow(
+      
+      box(
+        title = "Detailed View", width = 12, solidHeader = TRUE, status = "primary",
+        plotOutput("plot3", height = 250)) %>% withSpinner(color="#000000", type = 8),
+      ),
+    fluidRow(
+      
+      box(
+        title = "States View", width = 12, solidHeader = TRUE, status = "primary",
+        plotOutput("plot4", height = 450) %>% withSpinner(color="#000000", type = 8),
+     
+      )#,
+      #  box(
+      #    title = "Importance scores", width = 12, solidHeader = TRUE, status = "primary",
+      #    plotOutput("plot5", height = 250) %>% withSpinner(color="#000000", type = 8),
+      #  )
+    ),
+    fluidRow(
+      box( title = "Sequence", width = 12, solidHeader = TRUE, status = "primary",
+           textOutput("text")
+           )
+      
+   
       # box(width = 12, status = "warning",
       #    p(class = "text-muted",
       #       paste("No predictions have been computed."))),
       
-    ),
-    fluidRow(
-      box(title = "Matches", width = 8, solidHeader = TRUE, status = "primary",
-          dataTableOutput('table')
-      ),
-      
-      box(title = "Post-processing", width = 4, solidHeader = TRUE, status = "primary",
-          numericInput("threshold_conf", "Min average confidence:", 0.8, step = .1, min = 0, max = 1),
-          numericInput("threshold_pos_rate", "Positive rate:", 0.8, step = .1, min = 0, max = 0.99),
-          numericInput("threshold_min_seq_len", "Min array length:", 100, step = 10,  min = 1, max = 100),
-          numericInput("threshold_gap", "Min gap between loci:", 50, step = 10, min = 1, max = 1000)),
-    
-      box(
-        title = "States View", width = 12, solidHeader = TRUE, status = "primary",
-        plotOutput("plot4", height = 250) %>% withSpinner(color="#000000", type = 8),
-      ),
-      box(
-        title = "Importance scores", width = 12, solidHeader = TRUE, status = "primary",
-        plotOutput("plot5", height = 250) %>% withSpinner(color="#000000", type = 8),
-      )
     )
+   
   )
 )
 
 server <- function(input, output) {
   
+  
+  # download button
+  output$downloadDataUI <- renderUI({
+    req(dataSummary())
+    downloadButton('downloadData', label = 'Download Table')
+
+    })
+  
+
+  
   output$resetable_input <- renderUI({
     times <- input$reset_input
     div(id=letters[(times %% length(letters)) + 1],
+        
+        helpText("Specify the input sequence (nt only)"),
+        
         textAreaInput("text", "Sequence input", 
                       height = 150,
                       width = 350,
                       value = dummy, 
                       placeholder = NULL),
-        fileInput("fasta_path", width = 350, label = "or Input a FASTA file (will ignore text box)"),
-        numericInput("step", "Resolution (will evaluate every n nt):", 1, step = 10,  min = 1, max = 100),
+        helpText("Upload a file in the .FASTA format (only first sequence will be considered)"),
+        
+        fileInput("fasta_path", width = 350, label = "or Input a FASTA file"),
+        helpText("Predictions will be performed within a sliding window over the whole sequence."),
+        
     )
   })
-  
   
   
   #https://f000.backblazeb2.com/file/bioinf/crispr/logo.png
@@ -271,6 +308,27 @@ server <- function(input, output) {
     fasta_file <- microseq::readFasta(input$fasta_path$datapath) #tibble
     fasta_file$Sequence[1]
   })
+  
+  # the nt string
+  inputSequenceFull <- reactive({
+    if(is.null(input$fasta_path$datapath)) {
+      as.character(input$text) # use textarea data
+    } else {
+      fastaData() # use uploaded file
+    }
+  })
+    
+  # the nt string subsetted after clicking on table
+  inputSequenceSubset <- reactive({
+   req(inputSequenceFull())
+   req(dataSummary())
+   req(input$table_row_last_clicked)
+   subset <- substr(inputSequenceFull(), 
+                    dataSummary()[input$table_row_last_clicked,]$Start,
+                    dataSummary()[input$table_row_last_clicked,]$End)
+   subset
+  })
+  
   
   dataSummary <- reactive({
     req(dataInput())
@@ -308,9 +366,10 @@ server <- function(input, output) {
     crispr_summary_df
   })
   
+
+  
   
   dataInput <- eventReactive(input$run, {
-    # input$table_row_last_clicked <- NULL
     withProgress(value = 0, message = 'Running predictions',
                  detail = 'Please wait' ,{
                    incProgress(amount = .25, message = "Loading sequence") 
@@ -329,7 +388,7 @@ server <- function(input, output) {
                                       round_digits = 4,
                                       filename = "tmp_lvl1.h5",
                                       batch.size = batch_size,
-                                      step = input$step)
+                                      step = 1)
                    incProgress(amount = .5, message = "Loading results") 
                    states <- readRowsFromH5(h5_path = "tmp_lvl1.h5", complete = TRUE, getTargetPositions = TRUE)
                    incProgress(amount = 1, message = "Processing results") 
@@ -342,6 +401,14 @@ server <- function(input, output) {
                  })
   })
   
+  
+  
+#  eventReactive(input$reset_input, {
+#    if(is.null(input$fasta_path$datapath)) {
+#      input_sequence <- as.character(input$text) # use textarea data
+#    } else {
+#      input_sequence <- fastaData()
+#    }  })
   
   dataInput2 <- eventReactive(input$run, {
     withProgress(value = 0, message = 'Layer2',
@@ -362,7 +429,7 @@ server <- function(input, output) {
                                       round_digits = 4,
                                       filename = "tmp_lvl2.h5",
                                       batch.size = batch_size,
-                                      step = input$step)
+                                      step = 1)
                    incProgress(amount = .5, message = "Loading results") 
                    states <- readRowsFromH5(h5_path = "tmp_lvl2.h5", complete = TRUE, getTargetPositions = TRUE)
                    pred <- states[[1]]
@@ -380,19 +447,19 @@ server <- function(input, output) {
     req(dataInput())
     req(input$threshold_min_seq_len)
     p <- ggplot(data = dataInput(), aes(seq_middle, conf_CRISPR)) #+ geom_point(size = .1, alpha = .2) 
-    p <- p + xlab(paste0("Sequence position (in ", input$step, " nt)")) + ylab("CRISPR confidence")
+    p <- p + xlab(paste0("Position in sequence")) + ylab("CRISPR confidence")
     #p <- p + geom_hline(yintercept = 0.5, linetype = "dashed", color = "black") 
     p <- p + geom_hline(yintercept = input$threshold_conf, linetype = "dashed", color = "darkgreen") 
     p <- p + theme_classic()
     p <- p + geom_line(aes(y=rollmean(conf_CRISPR, input$threshold_min_seq_len,
                                       na.pad = TRUE)), color = "black", alpha = 1, size = 1) 
     
-    if(!is.null(input$table_row_last_clicked)){
-      start <- dataSummary()[input$table_row_last_clicked,]$Start - 10
-      end <- dataSummary()[input$table_row_last_clicked,]$End + 10
-      p <- p + geom_vline(xintercept = start, color = "red", linetype = "dashed")
-      p <- p + geom_vline(xintercept = end, color = "red", linetype = "dashed")
-    }
+  #  if(!is.null(input$table_row_last_clicked)){
+  #    start <- dataSummary()[input$table_row_last_clicked,]$Start - 10
+  #    end <- dataSummary()[input$table_row_last_clicked,]$End + 10
+  #    p <- p + geom_vline(xintercept = start, color = "red", linetype = "dashed")
+  #    p <- p + geom_vline(xintercept = end, color = "red", linetype = "dashed")
+  #  }
     p
   })
   
@@ -417,7 +484,7 @@ server <- function(input, output) {
     p <- p + geom_vline(xintercept = start, color = "red", linetype = "dashed")
     p <- p + geom_vline(xintercept = end, color = "red", linetype = "dashed")
     p <- p + geom_point(size = .1) 
-    p <- p + xlim(start - (500 * input$step), end + (500 * input$step))
+    p <- p + xlim(start - (input$adjacent), end + (input$adjacent))
     p <- p + geom_hline(yintercept = 0.5, linetype = "dashed", color = "black") 
     p <- p + theme_classic() 
     p
@@ -425,29 +492,50 @@ server <- function(input, output) {
   
   
   output$plot4 <- renderPlot({
+    req(inputSequenceFull())
     req(input$table_row_last_clicked)
     req(dataInput())
     req(dataInput2())
     req(dataSummary())
+
+    # get start and end based on fasta length
+    start_pos <- ifelse(dataSummary()[input$table_row_last_clicked,]$Start - (input$adjacent) < 0,
+                        0,
+                        dataSummary()[input$table_row_last_clicked,]$Start - (input$adjacent))
     
-    start_pos <- dataSummary()[input$table_row_last_clicked,]$Start# / input$step 
-    end_pos <- dataSummary()[input$table_row_last_clicked,]$End #/ input$step 
     
+    end_pos <- ifelse(dataSummary()[input$table_row_last_clicked,]$End - (input$adjacent) > nchar(inputSequenceFull()),
+                        nchar(inputSequenceFull()),
+                      dataSummary()[input$table_row_last_clicked,]$End  + (input$adjacent))
+    
+
     subset <- dataInput2()[start_pos:end_pos,]
     
     max_value <- max(subset)
     
+    loci_length <- dataSummary()[input$table_row_last_clicked,]$End - dataSummary()[input$table_row_last_clicked,]$Start
+    
     col_fun = colorRamp2(c(0, max_value/2, max_value), c("white", "orange", "black"))
     ht <- Heatmap(data.matrix(t(subset)),
                   name = "activation",
+            #      column_split = c(rep("pre", input$adjacent),
+             #                                     rep("main", loci_length),
+              #                                    rep("post", input$adjacent)), 
                   col = col_fun,
                   show_row_names = F,
+                  border = TRUE,
+                  column_title = "Sequence position in loci",
+                  row_title = "Neuron", 
+                  show_heatmap_legend = FALSE,
                   show_column_names = F,
                   use_raster = F,
-                  cluster_rows = T,
+                  cluster_rows = F,
                   row_names_gp = gpar(fontsize = 2),
                   column_names_gp = gpar(fontsize = 2),
                   cluster_columns = F)
+ 
+    
+    
     ht
   })
   
@@ -483,7 +571,19 @@ server <- function(input, output) {
     hm
     })
   
-
+  
+  output$downloadData <- downloadHandler(
+    filename = function() {"results.csv"},
+    content = function(file) {
+      write.csv(dataSummary(), file, quote = F, row.names = F, sep = ";")
+    })
+  
+  
+  # sequence box
+  output$text <- renderPrint({ 
+    cat(paste0(inputSequenceSubset(), collapse = " "))
+  })
+    
 }
 
 shinyApp(ui, server)
