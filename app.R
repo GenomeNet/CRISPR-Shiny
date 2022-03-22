@@ -5,8 +5,10 @@ library(keras)
 library(deepG)
 library(ggplot2)
 library(dplyr)
+library(Rtsne)
 library(circlize)
 library(shinycssloaders)
+library(Rtsne)
 library(DT)
 library(hdf5r)
 library(ComplexHeatmap) # sudo apt-get install libcairo2-dev
@@ -107,25 +109,25 @@ ui <- dashboardPage(#skin = "black",
   dashboardHeader(title = "CRISPR prediction", titleWidth = 350, disable = T),
   
   dashboardSidebar(
-width = 350, disable = F,
-                   box(width = 12, solidHeader = TRUE,
-                       p(
-                         class = "text-muted",
-                         paste("Deep-CRISPR finder. This service will predict the CRISPR propability of a input sequence.")
-                         )),
-                   box(width = 12, solidHeader = TRUE,
-                       uiOutput('resetable_input'),
-                       
-                       
-                       actionButton("run", "Predict"),
-                       actionButton("reset_input", "Reset inputs")
-                   ),
-                   
-                   box(width = 12, solidHeader = TRUE,
-                       p(class = "text-muted",
-                         paste("Funded by Priority Programme 2141. Much more than defence: the multiple functions and facets of CRISPR-Cas. Funded in part by BMBF Project GenomeNet (031L0199A/031L0199B)")
-                       ))
-                   
+    width = 350, disable = F,
+    box(width = 12, solidHeader = TRUE,
+        p(
+          class = "text-muted",
+          paste("Deep-CRISPR finder. This service will predict the CRISPR propability of a input sequence.")
+        )),
+    box(width = 12, solidHeader = TRUE,
+        uiOutput('resetable_input'),
+        
+        
+        actionButton("run", "Predict"),
+        actionButton("reset_input", "Reset inputs")
+    ),
+    
+    box(width = 12, solidHeader = TRUE,
+        p(class = "text-muted",
+          paste("Funded by Priority Programme 2141. Much more than defence: the multiple functions and facets of CRISPR-Cas. Funded in part by BMBF Project GenomeNet (031L0199A/031L0199B)")
+        ))
+    
   ),
   dashboardBody(
     tags$head(tags$style(HTML('
@@ -209,7 +211,7 @@ width = 350, disable = F,
                                 
                                 '))),
     
-  
+    
     
     fluidRow(
       box(
@@ -217,34 +219,34 @@ width = 350, disable = F,
         plotOutput("plot1", height = 250) %>% withSpinner(color="#000000", type = 8),
       ),
     ),
-      fluidRow(
-        box(title = "Matches", width = 8, solidHeader = TRUE, status = "primary",
-            dataTableOutput('table'), 
-            uiOutput("downloadDataUI"),
-            
-
-        ),
-        box(title = "Post-processing", width = 4, solidHeader = TRUE, status = "primary",
-                 numericInput("threshold_conf", "Min average confidence:", 0.8, step = .1, min = 0, max = 1),
-                 numericInput("threshold_pos_rate", "Positive rate:", 0.8, step = .1, min = 0, max = 0.99),
-                 numericInput("threshold_min_seq_len", "Min array length:", 100, step = 10,  min = 1, max = 100),
-                 numericInput("threshold_gap", "Min gap between loci:", 50, step = 10, min = 1, max = 1000),
-                 numericInput("adjacent", "Number of nt to plot adjacent to loci:", 50, step = 10, min = 1, max = 1000))
-    
+    fluidRow(
+      box(title = "Matches", width = 8, solidHeader = TRUE, status = "primary",
+          dataTableOutput('table'), 
+          uiOutput("downloadDataUI"),
+          
+          
       ),
+      box(title = "Post-processing", width = 4, solidHeader = TRUE, status = "primary",
+          numericInput("threshold_conf", "Min average confidence:", 0.8, step = .1, min = 0, max = 1),
+          numericInput("threshold_pos_rate", "Positive rate:", 0.8, step = .1, min = 0, max = 0.99),
+          numericInput("threshold_min_seq_len", "Min array length:", 100, step = 10,  min = 1, max = 100),
+          numericInput("threshold_gap", "Min gap between loci:", 50, step = 10, min = 1, max = 1000),
+          numericInput("adjacent", "Number of nt to plot adjacent to loci:", 50, step = 10, min = 1, max = 1000))
       
-      fluidRow(
+    ),
+    
+    fluidRow(
       
       box(
         title = "Detailed View", width = 12, solidHeader = TRUE, status = "primary",
         plotOutput("plot3", height = 250)) %>% withSpinner(color="#000000", type = 8),
-      ),
+    ),
     fluidRow(
       
       box(
         title = "States View", width = 12, solidHeader = TRUE, status = "primary",
-        plotOutput("plot4", height = 450) %>% withSpinner(color="#000000", type = 8),
-     
+       # plotOutput("plot4", height = 450) %>% withSpinner(color="#000000", type = 8),
+        
       )#,
       #  box(
       #    title = "Importance scores", width = 12, solidHeader = TRUE, status = "primary",
@@ -254,15 +256,29 @@ width = 350, disable = F,
     fluidRow(
       box( title = "Sequence", width = 12, solidHeader = TRUE, status = "primary",
            textOutput("text")
-           )
+      )
       
-   
+      
+      # box(width = 12, status = "warning",
+      #    p(class = "text-muted",
+      #       paste("No predictions have been computed."))),
+      
+    ),
+    fluidRow(
+      box( title = "States projection", width = 4, solidHeader = TRUE, status = "primary",
+           plotOutput("tsne") %>% withSpinner(color="#000000", type = 8),
+      ), 
+      box( title = "States projection by position", width = 4, solidHeader = TRUE, status = "primary",
+           plotOutput("tsne2") %>% withSpinner(color="#000000", type = 8),
+      )
+      
+      
       # box(width = 12, status = "warning",
       #    p(class = "text-muted",
       #       paste("No predictions have been computed."))),
       
     )
-   
+    
   )
 )
 
@@ -273,10 +289,10 @@ server <- function(input, output) {
   output$downloadDataUI <- renderUI({
     req(dataSummary())
     downloadButton('downloadData', label = 'Download Table')
-
-    })
+    
+  })
   
-
+  
   
   output$resetable_input <- renderUI({
     times <- input$reset_input
@@ -317,16 +333,16 @@ server <- function(input, output) {
       fastaData() # use uploaded file
     }
   })
-    
+  
   # the nt string subsetted after clicking on table
   inputSequenceSubset <- reactive({
-   req(inputSequenceFull())
-   req(dataSummary())
-   req(input$table_row_last_clicked)
-   subset <- substr(inputSequenceFull(), 
-                    dataSummary()[input$table_row_last_clicked,]$Start,
-                    dataSummary()[input$table_row_last_clicked,]$End)
-   subset
+    req(inputSequenceFull())
+    req(dataSummary())
+    req(input$table_row_last_clicked)
+    subset <- substr(inputSequenceFull(), 
+                     dataSummary()[input$table_row_last_clicked,]$Start,
+                     dataSummary()[input$table_row_last_clicked,]$End)
+    subset
   })
   
   
@@ -366,7 +382,7 @@ server <- function(input, output) {
     crispr_summary_df
   })
   
-
+  
   
   
   dataInput <- eventReactive(input$run, {
@@ -403,12 +419,12 @@ server <- function(input, output) {
   
   
   
-#  eventReactive(input$reset_input, {
-#    if(is.null(input$fasta_path$datapath)) {
-#      input_sequence <- as.character(input$text) # use textarea data
-#    } else {
-#      input_sequence <- fastaData()
-#    }  })
+  #  eventReactive(input$reset_input, {
+  #    if(is.null(input$fasta_path$datapath)) {
+  #      input_sequence <- as.character(input$text) # use textarea data
+  #    } else {
+  #      input_sequence <- fastaData()
+  #    }  })
   
   dataInput2 <- eventReactive(input$run, {
     withProgress(value = 0, message = 'Layer2',
@@ -454,12 +470,12 @@ server <- function(input, output) {
     p <- p + geom_line(aes(y=rollmean(conf_CRISPR, input$threshold_min_seq_len,
                                       na.pad = TRUE)), color = "black", alpha = 1, size = 1) 
     
-  #  if(!is.null(input$table_row_last_clicked)){
-  #    start <- dataSummary()[input$table_row_last_clicked,]$Start - 10
-  #    end <- dataSummary()[input$table_row_last_clicked,]$End + 10
-  #    p <- p + geom_vline(xintercept = start, color = "red", linetype = "dashed")
-  #    p <- p + geom_vline(xintercept = end, color = "red", linetype = "dashed")
-  #  }
+    #  if(!is.null(input$table_row_last_clicked)){
+    #    start <- dataSummary()[input$table_row_last_clicked,]$Start - 10
+    #    end <- dataSummary()[input$table_row_last_clicked,]$End + 10
+    #    p <- p + geom_vline(xintercept = start, color = "red", linetype = "dashed")
+    #    p <- p + geom_vline(xintercept = end, color = "red", linetype = "dashed")
+    #  }
     p
   })
   
@@ -491,13 +507,13 @@ server <- function(input, output) {
   })
   
   
-  output$plot4 <- renderPlot({
+  tsneData <-  reactive({
     req(inputSequenceFull())
     req(input$table_row_last_clicked)
     req(dataInput())
     req(dataInput2())
     req(dataSummary())
-
+    
     # get start and end based on fasta length
     start_pos <- ifelse(dataSummary()[input$table_row_last_clicked,]$Start - (input$adjacent) < 0,
                         0,
@@ -505,41 +521,64 @@ server <- function(input, output) {
     
     
     end_pos <- ifelse(dataSummary()[input$table_row_last_clicked,]$End - (input$adjacent) > nchar(inputSequenceFull()),
-                        nchar(inputSequenceFull()),
+                      nchar(inputSequenceFull()),
                       dataSummary()[input$table_row_last_clicked,]$End  + (input$adjacent))
     
-
+    
     subset <- dataInput2()[start_pos:end_pos,]
     
     max_value <- max(subset)
     
     loci_length <- dataSummary()[input$table_row_last_clicked,]$End - dataSummary()[input$table_row_last_clicked,]$Start
     
-    col_fun = colorRamp2(c(0, max_value/2, max_value), c("white", "orange", "black"))
-    ht <- Heatmap(data.matrix(t(subset)),
-                  name = "activation",
-            #      column_split = c(rep("pre", input$adjacent),
-             #                                     rep("main", loci_length),
-              #                                    rep("post", input$adjacent)), 
-                  col = col_fun,
-                  show_row_names = F,
-                  border = TRUE,
-                  column_title = "Sequence position in loci",
-                  row_title = "Neuron", 
-                  show_heatmap_legend = FALSE,
-                  show_column_names = F,
-                  use_raster = F,
-                  cluster_rows = F,
-                  row_names_gp = gpar(fontsize = 2),
-                  column_names_gp = gpar(fontsize = 2),
-                  cluster_columns = F)
- 
+    tSNE_fit <- Rtsne(subset, perplexity = 20, pca = TRUE, max_iter = 50, num_threads = 1,
+                      check_duplicates = F)
     
-    
-    ht
+    hc <- hclust(dist(as.matrix(tSNE_df[,1:2])), method = "ward.D2") 
+    clusters <- cutree(hc, 4) 
+    tSNE_df$clusters <- clusters
+    tSNE_df
   })
   
+  
+
+  
+  
+#  p <- ggplot(data = tSNE_df, aes(x = tSNE1,  y = tSNE2, color = as.character(clusters)))
+#  p <- p + geom_point(size = .1) + theme_classic()
+#  p
+
+  
+  output$tsne <- renderPlot({
+    req(tsneData())
+    p <- ggplot(data = tsneData(), aes(x = tSNE1,  y = tSNE2, color = as.character(clusters)))
+    p <- p + geom_point(size = .1) + theme_classic()
+    p
+  })
+  
+  output$tsne2 <- renderPlot({
+    req(tsneData())
+    p <- ggplot(data = tsneData(), aes(x = tSNE1,  y = tSNE2, color = ID))
+    p <- p + geom_point(size = .1) + theme_classic()
+    p <- p + scale_color_gradient2(midpoint = nrow(tsneData())/2, low = "blue", mid="white",
+                                   high="red", space ="Lab" )
+    p
+  })
+  
+  output$tsne3 <- renderPlot({
+    req(tsneData())
+    req(dataSummary())
     
+    df <- tsneData()
+    p <- ggplot(data = tsneData(), aes(x = tSNE1,  y = tSNE2, color = ID))
+    p <- p + geom_point(size = .1) + theme_classic()
+    p <- p + scale_color_gradient2(midpoint = nrow(tsneData()/2), low="blue", mid="white",
+                          high="red", space ="Lab" )
+    p
+  })
+  
+  
+  
   output$plot5 <- renderPlot({
     req(input$table_row_last_clicked)
     req(dataInput())
@@ -569,7 +608,7 @@ server <- function(input, output) {
     ig_array <- as.array(ig)
     hm <- heatmaps_integrated_grad(integrated_grads = ig_array, input_seq = input)[[1]]
     hm
-    })
+  })
   
   
   output$downloadData <- downloadHandler(
@@ -583,7 +622,32 @@ server <- function(input, output) {
   output$text <- renderPrint({ 
     cat(paste0(inputSequenceSubset(), collapse = " "))
   })
+
+  
+  ## tsne
+  output$plot6 <- renderPlot({
+    req(input$table_row_last_clicked)
+    req(dataInput())
+    req(inputSequenceFull())
+    req(input$table_row_last_clicked)
+    req(dataInput())
+    req(dataInput2())
+    req(dataSummary())
     
+    # get start and end based on fasta length
+    start_pos <- ifelse(dataSummary()[input$table_row_last_clicked,]$Start - (input$adjacent) < 0,
+                        0,
+                        dataSummary()[input$table_row_last_clicked,]$Start - (input$adjacent))
+    
+    
+    end_pos <- ifelse(dataSummary()[input$table_row_last_clicked,]$End - (input$adjacent) > nchar(inputSequenceFull()),
+                      nchar(inputSequenceFull()),
+                      dataSummary()[input$table_row_last_clicked,]$End  + (input$adjacent))
+    
+    
+    subset <- dataInput2()[start_pos:end_pos,]
+    ht
+  })
 }
 
 shinyApp(ui, server)
